@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     ['https://ollama.com/v1', 'https://ollama.com/v1', 'already has /v1'],
     ['http://localhost:11434', 'http://localhost:11434/v1', 'bare local host + port'],
     ['http://127.0.0.1:11434/v1/', 'http://127.0.0.1:11434/v1', 'trailing slash stripped'],
-    ['http://192.168.86.41:11434', 'http://192.168.86.41:11434/v1', 'LAN box'],
+    ['http://192.0.2.10:11434', 'http://192.0.2.10:11434/v1', 'bare LAN host (doc-range IP)'],
     ['ftp://example.com', null, 'non-http scheme rejected'],
     ['   ', OLLAMA_DEFAULT_BASE_URL, 'whitespace → cloud default'],
   ];
