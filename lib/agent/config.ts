@@ -179,11 +179,22 @@ function firstEnv(names: string[]): string | null {
  * Enabled models come from settings; an empty/invalid value means "all models",
  * and a configured Ollama model is always part of the allowlist.
  */
-export async function resolveAgentConfig(userId?: string | null): Promise<ResolvedAgentConfig> {
+export async function resolveAgentConfig(
+  userId?: string | null,
+  /**
+   * Settings staged by the caller but not yet written. The settings route
+   * validates a request against the configuration that request WILL produce, so
+   * it must see the Ollama endpoint/model it is about to store — reading back
+   * the persisted rows would validate against the previous state and reject a
+   * first-time "set endpoint + model + enable it" save. `undefined` leaves the
+   * stored value alone; `null` means the caller is clearing it.
+   */
+  overrides?: Partial<Record<string, unknown>>,
+): Promise<ResolvedAgentConfig> {
   const personalKeys = userId
     ? AGENT_PROVIDERS.map((provider) => personalKeySetting(provider.id, userId))
     : [];
-  const settings = await getSettingsByKeys([
+  const stored = await getSettingsByKeys([
     ...AI_SECRET_SETTING_KEYS,
     ...personalKeys,
     SETTING_MODEL,
@@ -192,6 +203,10 @@ export async function resolveAgentConfig(userId?: string | null): Promise<Resolv
     SETTING_OLLAMA_BASE_URL,
     SETTING_OLLAMA_MODEL,
   ]).catch(() => ({} as Record<string, unknown>));
+
+  const settings = overrides
+    ? { ...stored, ...Object.fromEntries(Object.entries(overrides).filter(([, v]) => v !== undefined)) }
+    : stored;
 
   const providers = {} as Record<AgentProviderId, ResolvedProviderKey>;
   for (const provider of AGENT_PROVIDERS) {

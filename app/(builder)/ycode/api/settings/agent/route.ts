@@ -97,6 +97,9 @@ export async function PUT(request: NextRequest) {
     }
 
     const updates: Record<string, unknown> = {};
+    // Default-model change staged for validation against the config this request
+    // will produce (see the post-Ollama resolve below).
+    let pendingModel: string | null = null;
 
     // Current stored rows (shared + this user's personal) so key writes,
     // deletes, and scope moves can target the right row.

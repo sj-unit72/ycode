@@ -156,7 +156,11 @@ export default function AgentKeyForm({ provider, submitLabel, keyScope, onDone, 
           ) : (
             <>
               Create a key in the{' '}
-              <a href={provider.consoleUrl} target="_blank" rel="noopener noreferrer">
+              <a
+                href={provider.consoleUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 {provider.consoleLabel}
               </a>
               .
@@ -191,7 +195,11 @@ export default function AgentKeyForm({ provider, submitLabel, keyScope, onDone, 
             {isSubmitting ? <Spinner className="size-4" /> : submitLabel}
           </Button>
           {onCancel && (
-            <Button variant="secondary" onClick={onCancel} disabled={isSubmitting}>
+            <Button
+              variant="secondary"
+              onClick={onCancel}
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
           )}
