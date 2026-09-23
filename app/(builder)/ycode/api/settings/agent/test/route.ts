@@ -107,36 +107,77 @@ async function testKey(provider: AgentProviderId, apiKey: string): Promise<void>
 class ProviderKeyError extends Error {}
 
 /**
- * Verify an Ollama endpoint. Unlike the hosted vendors, listing models is the
- * only check that means anything: the key is optional (a self-hosted server has
- * no auth at all), so this reports success when the endpoint answers, plus
- * whether the configured model id is one it actually serves.
+ * Verify an Ollama endpoint.
+ *
+ * Listing models is NOT a key check: Ollama Cloud answers `GET /v1/models` with
+ * 200 and the full public catalog even for an absent or bogus bearer key, so a
+ * models-list check reports "connected" for a key that every real chat call
+ * rejects with 401. When a key is supplied it is therefore validated against
+ * `POST /v1/chat/completions` — the exact endpoint the agent uses — and the
+ * models list is only consulted for a keyless self-hosted server, where a
+ * reachable endpoint is the whole check.
  */
 async function testOllama(baseUrl: string, apiKey: string | null, model: string | null): Promise<void> {
-  const url = `${baseUrl.replace(/\/+$/, '')}/models`;
+  const root = baseUrl.replace(/\/+$/, '');
 
+  if (apiKey) {
+    let chatResponse: Response;
+    try {
+      chatResponse = await fetch(`${root}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        // A 1-token completion; falls back to a known public model when no model
+        // is configured yet, so the key can still be validated.
+        body: JSON.stringify({
+          model: model ?? 'gpt-oss:20b',
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch {
+      throw new ProviderKeyError(
+        `Could not reach Ollama at ${baseUrl}. Check the endpoint URL and that the server is running.`,
+      );
+    }
+
+    if (chatResponse.status === 401 || chatResponse.status === 403) {
+      throw new ProviderKeyError(
+        'Invalid API key. Ollama Cloud requires a key from your Ollama account; a self-hosted server usually needs none.',
+      );
+    }
+    // Ollama reports an unknown model id as 404 — a model problem, not a key one.
+    if (chatResponse.status === 404 && model) {
+      throw new ProviderKeyError(`Ollama has no model named "${model}" on ${baseUrl}.`);
+    }
+    if (!chatResponse.ok) {
+      const detail = await readOllamaError(chatResponse);
+      throw new ProviderKeyError(
+        `Ollama API error: ${chatResponse.status} ${chatResponse.statusText}${detail ? ` — ${detail}` : ''}`,
+      );
+    }
+    return;
+  }
+
+  // Keyless (self-hosted): the models list is the only check available, plus
+  // whether the configured model id is one the endpoint actually serves.
   let response: Response;
   try {
-    response = await fetch(url, {
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-      signal: AbortSignal.timeout(15_000),
-    });
+    response = await fetch(`${root}/models`, { signal: AbortSignal.timeout(15_000) });
   } catch {
     throw new ProviderKeyError(
       `Could not reach Ollama at ${baseUrl}. Check the endpoint URL and that the server is running.`,
     );
   }
 
-  if (response.status === 401 || response.status === 403) {
-    throw new ProviderKeyError(
-      'Invalid API key. Ollama Cloud requires a key from your Ollama account; a self-hosted server usually needs none.',
-    );
-  }
   if (!response.ok) {
     throw new ProviderKeyError(`Ollama API error: ${response.status} ${response.statusText}`);
   }
 
-  // No model configured yet — a reachable endpoint is all we can check.
   if (!model) return;
 
   const payload = (await response.json().catch(() => null)) as
@@ -153,6 +194,18 @@ async function testOllama(baseUrl: string, apiKey: string | null, model: string 
   throw new ProviderKeyError(
     `Connected to ${baseUrl}, but it has no model named "${model}". Available: ${shown}${ids.length > 5 ? ', …' : ''}`,
   );
+}
+
+/** Best-effort read of Ollama's `{"error":{"message":...}}` body. */
+async function readOllamaError(response: Response): Promise<string | null> {
+  try {
+    const payload = (await response.json()) as { error?: { message?: unknown } | string };
+    if (typeof payload.error === 'string') return payload.error;
+    const message = payload.error?.message;
+    return typeof message === 'string' ? message : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A key problem xAI reported that should surface to the user as-is. */
